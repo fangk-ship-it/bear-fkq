@@ -1,0 +1,575 @@
+index.html
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>臺漫灶腳 - 漫畫食譜連動版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fcfcfc;
+            margin: 0;
+            overflow-x: hidden;
+            user-select: none;
+        }
+
+        /* 漫畫美學 */
+        .comic-border {
+            border: 4px solid black;
+            box-shadow: 6px 6px 0px rgba(0,0,0,1);
+        }
+
+        .comic-shadow {
+            filter: drop-shadow(4px 4px 0px black);
+        }
+
+        /* 場景切換動畫 */
+        .scene {
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        /* 擬聲詞 pop-up */
+        @keyframes pop-up {
+            0% { transform: scale(0) rotate(-15deg); opacity: 0; }
+            50% { transform: scale(1.4) rotate(10deg); opacity: 1; }
+            100% { transform: scale(1) rotate(0deg); opacity: 0; }
+        }
+
+        .onomatopeia {
+            position: absolute;
+            font-weight: 900;
+            font-size: 3rem;
+            color: black;
+            text-shadow: 4px 4px 0 white, -4px -4px 0 white;
+            pointer-events: none;
+            animation: pop-up 0.8s forwards;
+            z-index: 100;
+        }
+
+        /* 震動目標 */
+        @keyframes shake {
+            0%, 100% { transform: translate(0,0); }
+            25% { transform: translate(2px, -2px); }
+            50% { transform: translate(-2px, 2px); }
+            75% { transform: translate(2px, 2px); }
+        }
+        .shake:hover { animation: shake 0.2s infinite; cursor: pointer; }
+
+        /* 書櫃樣式 */
+        .book {
+            width: 45px;
+            height: 190px;
+            border: 3px solid black;
+            cursor: pointer;
+            writing-mode: vertical-rl;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            transition: all 0.3s;
+            background: white;
+            position: relative;
+        }
+        .book-locked { filter: grayscale(1); opacity: 0.3; }
+        .book:hover:not(.book-locked) { transform: translateY(-10px) rotate(-2deg); box-shadow: 8px 8px 0 rgba(0,0,0,0.2); }
+
+        /* 鍋爐動畫 */
+        @keyframes steam {
+            0% { transform: translateY(0) scale(1); opacity: 0; }
+            50% { transform: translateY(-20px) scale(1.2); opacity: 0.5; }
+            100% { transform: translateY(-40px) scale(1.5); opacity: 0; }
+        }
+        .steam-particle {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: rgba(200,200,200,0.4);
+            border-radius: 50%;
+            animation: steam 2s infinite;
+        }
+
+        /* 米粉泡水特效 */
+        .rice-noodle { transition: all 2s ease-in-out; }
+    </style>
+</head>
+<body>
+
+    <!-- 頂部導航 -->
+    <nav class="fixed top-0 left-0 w-full p-4 flex justify-between items-center z-50 bg-white border-b-4 border-black">
+        <div class="font-black text-2xl italic flex items-center gap-2">
+            <span class="bg-black text-white px-2">臺漫</span>灶腳
+        </div>
+        <div class="flex gap-4">
+            <button onclick="changeScene('intro')" class="font-bold border-2 border-black px-4 py-1 hover:bg-gray-100">故事選單</button>
+            <button onclick="changeScene('shelf')" class="font-bold bg-black text-white px-4 py-1 hover:bg-gray-800">藏書閣</button>
+        </div>
+    </nav>
+
+    <!-- 場景 A：Webtoon 捲動導引 -->
+    <div id="intro" class="scene pt-24 min-h-screen bg-stone-50">
+        <div class="max-w-2xl mx-auto p-4 flex flex-col gap-8" id="intro-container">
+            <!-- 由 JS 動態生成漫畫格 -->
+        </div>
+    </div>
+
+    <!-- 場景 B：互動模擬廚房 -->
+    <div id="kitchen" class="scene hidden fixed inset-0 bg-white z-40 flex items-center justify-center">
+        <div class="relative comic-border w-[900px] h-[650px] bg-white overflow-hidden shadow-2xl">
+            <!-- 畫布層 -->
+            <canvas id="mainCanvas" width="900" height="650" class="absolute inset-0"></canvas>
+            
+            <!-- 互動文字提示 -->
+            <div class="absolute top-10 left-10 z-10">
+                <div id="recipe-step-box" class="bg-black text-white px-6 py-2 comic-shadow font-black text-xl">
+                    步驟：初始化中...
+                </div>
+                <div id="recipe-hint" class="mt-2 bg-white border-2 border-black px-4 py-1 font-bold text-sm italic">
+                    提示文字
+                </div>
+            </div>
+
+            <!-- 動態特效容器 -->
+            <div id="fx-layer" class="absolute inset-0 pointer-events-none"></div>
+
+            <!-- 下方控制區 -->
+            <div class="absolute bottom-6 left-6 right-6 flex justify-between items-end">
+                <div id="interactive-tools" class="flex gap-4">
+                    <!-- 依料理動態插入工具按鈕 -->
+                </div>
+                <div class="flex flex-col items-end gap-2">
+                    <div id="progress-bar-container" class="w-48 h-6 border-4 border-black bg-gray-200 hidden">
+                        <div id="progress-bar" class="h-full bg-yellow-400 w-0 transition-all"></div>
+                    </div>
+                    <button id="finish-btn" class="hidden bg-red-600 text-white border-4 border-black px-8 py-2 font-black text-xl hover:bg-red-700">收錄進書櫃</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 場景 C：虛擬書櫃 -->
+    <div id="shelf" class="scene hidden pt-24 min-h-screen bg-amber-50 px-10">
+        <div class="max-w-6xl mx-auto">
+            <h1 class="text-4xl font-black mb-10 text-center italic border-b-4 border-black pb-4">我的臺漫收藏書架</h1>
+            <div id="shelf-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-12">
+                <!-- 由 JS 動態生成書本 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 漫畫詳情 Modal -->
+    <div id="modal" class="hidden fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-6">
+        <div class="bg-white comic-border max-w-4xl w-full p-10 relative flex gap-10">
+            <button onclick="toggleModal(false)" class="absolute -top-4 -right-4 bg-white border-4 border-black w-12 h-12 font-black text-2xl">✕</button>
+            <div id="modal-cover" class="w-1/3 h-[400px] border-4 border-black flex items-center justify-center text-7xl shadow-inner bg-gray-100"></div>
+            <div class="w-2/3">
+                <h2 id="modal-title" class="text-4xl font-black mb-2">作品標題</h2>
+                <div id="modal-author" class="text-red-600 font-bold text-xl mb-6">作者名稱</div>
+                <p id="modal-desc" class="text-lg leading-relaxed mb-8 italic text-gray-700"></p>
+                <div class="mb-8">
+                    <h4 class="font-black mb-2 text-sm">已解鎖食譜圖鑑：</h4>
+                    <div id="modal-foods" class="flex gap-2"></div>
+                </div>
+                <a id="modal-link" href="#" target="_blank" class="block w-full text-center bg-black text-white py-4 font-black text-xl hover:bg-gray-800 transition">前往觀看完整作品</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 全域資料庫 ---
+        const comicData = [
+            {
+                id: 'shou-lu-cai', title: '手路菜', author: '阿旺師', color: '#ef4444', 
+                desc: '傳承台灣總舖師的精神，描述每一道菜背後隱藏的家庭記憶與土地溫情。',
+                link: 'https://unews.nccu.edu.tw/unews/comic-local-cuisine/',
+                foods: [
+                    { id: 'gzr', name: '瓜仔肉', icon: '🍲', recipeId: 'gua-zai-rou', collected: false },
+                    { id: 'cmf', name: '炒米粉', icon: '🍜', recipeId: 'chao-mi-fen', collected: false },
+                    { id: 'zjf', name: '豬腳飯', icon: '🍚', recipeId: 'zhu-jiao-fan', collected: false }
+                ]
+            },
+            {
+                id: 'happiness', title: '幸福調味料', author: '阮光民', color: '#3b82f6',
+                desc: '平凡的調味料，釀造出不平凡的人生滋味。在醬油與茶葉蛋的香氣中，找回最純粹的幸福。',
+                link: 'https://www.creative-comic.tw/',
+                foods: [
+                    { id: 'cyd', name: '茶葉蛋', icon: '🥚', recipeId: 'cha-ye-dan', collected: false },
+                    { id: 'jy', name: '秘製醬油', icon: '🍶', recipeId: 'jiang-you', collected: false }
+                ]
+            },
+            {
+                id: 'endemic', title: '台灣特有種', author: '各家合著', color: '#8b5cf6',
+                desc: '將台灣生態特色轉化為漫畫故事，貢丸與水粄代表了土地與工藝的質樸結合。',
+                link: 'https://www.creative-comic.tw/',
+                foods: [
+                    { id: 'gw', name: '貢丸', icon: '🧆', recipeId: 'gong-wan', collected: false },
+                    { id: 'sb', name: '水粄', icon: '🥣', recipeId: 'shui-ban', collected: false }
+                ]
+            },
+            {
+                id: 'tea-trace', title: '異人茶跡', author: '張季雅', color: '#10b981',
+                desc: '十九世紀的大稻埕，陶德與李春生聯手將台灣茶推向國際的熱血貿易傳奇。',
+                link: 'https://www.creative-comic.tw/',
+                foods: [
+                    { id: 'wlc', name: '烏龍茶', icon: '🍵', recipeId: 'wu-long-cha', collected: false },
+                    { id: 'sgdg', name: '英式水果蛋糕', icon: '🍰', recipeId: 'fruit-cake', collected: false },
+                    { id: 'zjmx', name: '豬腳麵線', icon: '🥢', recipeId: 'zhu-jiao-mian-xian', collected: false }
+                ]
+            },
+            {
+                id: 'meiwu', title: '友繪的小梅屋記事簿', author: '清水', color: '#f59e0b',
+                desc: '昭和時代的大稻埕，少女在梅屋敷旅館中，透過美食連結日治時期的精緻生活。',
+                link: 'https://www.creative-comic.tw/',
+                foods: [
+                    { id: 'ay', name: '愛玉', icon: '🍋', recipeId: 'ai-yu', collected: false },
+                    { id: 'xc', name: '仙草', icon: '🍮', recipeId: 'xian-cao', collected: false },
+                    { id: 'hgz', name: '和果子', icon: '🍡', recipeId: 'wa-gashi', collected: false }
+                ]
+            }
+        ];
+
+        let currentComic = null;
+        let currentFood = null;
+        let recipeState = { step: 0, count: 0, timer: null };
+
+        // --- 場景管理 ---
+        function changeScene(target) {
+            document.querySelectorAll('.scene').forEach(s => s.classList.add('hidden'));
+            document.getElementById(target).classList.remove('hidden');
+            if(target === 'shelf') renderShelf();
+            if(target === 'intro') renderIntro();
+        }
+
+        function renderIntro() {
+            const container = document.getElementById('intro-container');
+            container.innerHTML = '';
+            comicData.forEach(comic => {
+                const card = document.createElement('div');
+                card.className = 'comic-border bg-white p-6 relative overflow-hidden';
+                card.innerHTML = `
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-black italic border-l-8 pl-3" style="border-color: ${comic.color}">${comic.title}</h2>
+                        <span class="text-xs font-bold text-gray-400">by ${comic.author}</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        ${comic.foods.map(f => `
+                            <div onclick="startCooking('${comic.id}', '${f.id}')" class="shake border-2 border-black aspect-square flex flex-col items-center justify-center p-2 hover:bg-yellow-50 transition">
+                                <span class="text-3xl mb-1">${f.icon}</span>
+                                <span class="text-[10px] font-black">${f.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderShelf() {
+            const grid = document.getElementById('shelf-grid');
+            grid.innerHTML = '';
+            comicData.forEach(comic => {
+                const isAllCollected = comic.foods.every(f => f.collected);
+                const collectedCount = comic.foods.filter(f => f.collected).length;
+                
+                const col = document.createElement('div');
+                col.className = 'flex flex-col items-center gap-4';
+                col.innerHTML = `
+                    <div onclick="openModal('${comic.id}')" class="book ${collectedCount > 0 ? '' : 'book-locked'}" style="background-color: ${comic.color}">
+                        ${comic.title}
+                        ${isAllCollected ? '<div class="absolute -top-3 -right-3 text-2xl">🏆</div>' : ''}
+                    </div>
+                    <div class="h-4 w-full bg-[#5d4037] border-2 border-black rounded-full shadow-inner"></div>
+                    <div class="text-[10px] font-bold text-stone-500">${collectedCount}/${comic.foods.length} 料理收集</div>
+                `;
+                grid.appendChild(col);
+            });
+        }
+
+        // --- 互動模擬邏輯 ---
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+
+        function startCooking(comicId, foodId) {
+            currentComic = comicData.find(c => c.id === comicId);
+            currentFood = currentComic.foods.find(f => f.id === foodId);
+            
+            recipeState = { step: 0, count: 0, timer: null };
+            document.getElementById('finish-btn').classList.add('hidden');
+            document.getElementById('progress-bar-container').classList.add('hidden');
+            
+            changeScene('kitchen');
+            runRecipeStep();
+        }
+
+        function runRecipeStep() {
+            const steps = getRecipeSteps(currentFood.recipeId);
+            const current = steps[recipeState.step];
+            
+            document.getElementById('recipe-step-box').innerText = `步驟 ${recipeState.step + 1}：${current.title}`;
+            document.getElementById('recipe-hint').innerText = current.hint;
+            
+            setupTools(current.tools);
+            drawKitchenBase();
+        }
+
+        function getRecipeSteps(id) {
+            const recipes = {
+                'gua-zai-rou': [
+                    { title: '剁碎醬瓜', hint: '用滑鼠在醬瓜上重複劃線 10 次進行剁碎動作！', tools: ['knife'], action: 'slice', target: 10 },
+                    { title: '混合絞肉', hint: '點擊攪拌棒 5 次，將醬瓜水與絞肉充分混勻。', tools: ['mixer'], action: 'click', target: 5 },
+                    { title: '大火蒸煮', hint: '點擊火爐開啟強火，等待蒸熟。', tools: ['fire'], action: 'wait', target: 3000 }
+                ],
+                'chao-mi-fen': [
+                    { title: '浸泡米粉', hint: '點擊水盆開始泡水，需等待 6 秒讓米粉吸水。', tools: ['water'], action: 'timer', target: 6000 },
+                    { title: '爆香配料', hint: '滑動鏟子翻炒紅蔥頭與蝦米 8 次。', tools: ['spatula'], action: 'slice', target: 8 },
+                    { title: '燜煮收汁', hint: '點擊鍋蓋蓋上，靜置燜煮。', tools: ['lid'], action: 'wait', target: 2000 }
+                ],
+                'zhu-jiao-fan': [
+                    { title: '跑活水去腥', hint: '點擊水龍頭清洗豬腳 5 次。', tools: ['water'], action: 'click', target: 5 },
+                    { title: '炒香糖色', hint: '點擊糖罐加入砂糖，直到顏色變深。', tools: ['sugar'], action: 'click', target: 6 },
+                    { title: '慢火滷製', hint: '長按爐火按鈕進行慢燉，等待醬汁濃稠。', tools: ['fire'], action: 'hold', target: 3000 }
+                ],
+                'cha-ye-dan': [
+                    { title: '輕敲蛋殼', hint: '點擊雞蛋 4 次讓蛋殼產生裂紋（入味關鍵）。', tools: ['spoon'], action: 'click', target: 4 },
+                    { title: '投入茶包', hint: '將茶葉包與香料放入鍋內。', tools: ['tea-bag'], action: 'click', target: 1 },
+                    { title: '長時間浸泡', hint: '點擊浸泡，等待入味。', tools: ['wait-timer'], action: 'wait', target: 2000 }
+                ],
+                'jiang-you': [
+                    { title: '黃豆製麴', hint: '點擊黃豆堆進行翻動 8 次促進發酵。', tools: ['hand'], action: 'click', target: 8 },
+                    { title: '入甕封存', hint: '點擊甕蓋進行密封。', tools: ['lid'], action: 'click', target: 1 },
+                    { title: '日曬釀造', hint: '點擊太陽，讓時間醞釀風味。', tools: ['sun'], action: 'wait', target: 2000 }
+                ],
+                'gong-wan': [
+                    { title: '搥打肉泥', hint: '點擊石臼連續搥打 12 次增加彈性！', tools: ['hammer'], action: 'click', target: 12 },
+                    { title: '手擠丸子', hint: '滑動滑鼠模擬虎口擠出圓形丸子 5 顆。', tools: ['hand'], action: 'slice', target: 5 },
+                    { title: '溫水定型', hint: '點擊入鍋，保持水溫定型。', tools: ['fire'], action: 'wait', target: 2000 }
+                ],
+                'shui-ban': [
+                    { title: '磨製米漿', hint: '旋轉石磨（滑動圓圈）完成米漿磨製。', tools: ['stone-mill'], action: 'circle', target: 5 },
+                    { title: '炒香鹹料', hint: '點擊菜脯與肉末炒香。', tools: ['spatula'], action: 'click', target: 5 },
+                    { title: '大火炊蒸', hint: '點擊蒸籠，等待水粄熟透。', tools: ['steamer'], action: 'wait', target: 3000 }
+                ],
+                'wu-long-cha': [
+                    { title: '茶葉萎凋', hint: '點擊竹篩抖動茶葉，均勻散失水分。', tools: ['sieve'], action: 'click', target: 6 },
+                    { title: '手感浪菁', hint: '滑動滑鼠旋轉茶葉，誘發香氣。', tools: ['hand'], action: 'slice', target: 8 },
+                    { title: '溫火烘焙', hint: '點擊茶焙籠，鎖住回甘香氣。', tools: ['fire'], action: 'wait', target: 2000 }
+                ],
+                'fruit-cake': [
+                    { title: '糖漬水果', hint: '點擊酒瓶倒入白蘭地浸泡果乾。', tools: ['wine'], action: 'click', target: 4 },
+                    { title: '打發奶油', hint: '滑動攪拌直到奶油呈現蓬鬆狀。', tools: ['whisk'], action: 'slice', target: 10 },
+                    { title: '低溫烘烤', hint: '點擊烤箱，耐心等待蛋糕出爐。', tools: ['oven'], action: 'wait', target: 3000 }
+                ],
+                'ai-yu': [
+                    { title: '手工搓洗', hint: '將愛玉子放入棉袋，點擊水盆搓洗 15 次！', tools: ['bag'], action: 'click', target: 15 },
+                    { title: '釋放膠質', hint: '滑動滑鼠模擬揉搓動作 10 次。', tools: ['hand'], action: 'slice', target: 10 },
+                    { title: '靜置結凍', hint: '點擊冷藏，等待凝結成塊。', tools: ['fridge'], action: 'wait', target: 2000 }
+                ],
+                'wa-gashi': [
+                    { title: '篩濾豆沙', hint: '點擊濾網將豆沙壓過細孔。', tools: ['sieve'], action: 'click', target: 6 },
+                    { title: '細緻塑形', hint: '滑動三角棒雕琢出花瓣紋路。', tools: ['stick'], action: 'slice', target: 8 },
+                    { title: '點睛修飾', hint: '點擊完成最後裝飾。', tools: ['tweezer'], action: 'click', target: 1 }
+                ],
+                'xian-cao': [
+                    { title: '熬煮仙草乾', hint: '點擊大鍋持續加熱 6 次。', tools: ['fire'], action: 'click', target: 6 },
+                    { title: '過濾殘渣', hint: '滑動濾袋分離湯汁與乾草。', tools: ['filter'], action: 'slice', target: 8 },
+                    { title: '勾芡成凍', hint: '點擊加入澱粉水攪拌。', tools: ['spoon'], action: 'click', target: 4 }
+                ]
+            };
+            return recipes[id] || [{ title: '製作料理', hint: '點擊完成', tools: ['hand'], action: 'click', target: 1 }];
+        }
+
+        function setupTools(tools) {
+            const container = document.getElementById('interactive-tools');
+            container.innerHTML = '';
+            tools.forEach(t => {
+                const btn = document.createElement('button');
+                btn.className = 'bg-white border-4 border-black p-4 text-3xl hover:bg-yellow-100 comic-shadow';
+                btn.innerText = getToolIcon(t);
+                btn.onclick = () => handleToolClick(t);
+                container.appendChild(btn);
+            });
+        }
+
+        function getToolIcon(tool) {
+            const map = { 'knife': '🔪', 'mixer': '🌀', 'fire': '🔥', 'water': '💧', 'spatula': '🍳', 'lid': '🥘', 'sugar': '🧂', 'spoon': '🥄', 'tea-bag': '☕', 'sun': '☀️', 'hand': '🤚', 'hammer': '🔨', 'stone-mill': '⚙️', 'steamer': '💨', 'sieve': '🕸️', 'wine': '🍾', 'whisk': '🌪️', 'oven': '⏲️', 'bag': '🧤', 'fridge': '❄️', 'stick': '🥢', 'tweezer': '✂️', 'filter': '🧺', 'wait-timer': '⏳' };
+            return map[tool] || '⚒️';
+        }
+
+        function handleToolClick(tool) {
+            const steps = getRecipeSteps(currentFood.recipeId);
+            const current = steps[recipeState.step];
+            
+            if (current.action === 'click') {
+                recipeState.count++;
+                triggerFX('叩！', 450, 325);
+                checkStepProgress(current.target);
+            } else if (current.action === 'wait' || current.action === 'timer') {
+                startTimer(current.target);
+            }
+        }
+
+        function startTimer(duration) {
+            const barCont = document.getElementById('progress-bar-container');
+            const bar = document.getElementById('progress-bar');
+            barCont.classList.remove('hidden');
+            let start = null;
+            
+            function animate(timestamp) {
+                if(!start) start = timestamp;
+                let progress = timestamp - start;
+                let perc = Math.min(progress / duration * 100, 100);
+                bar.style.width = perc + '%';
+                
+                if(progress < duration) {
+                    requestAnimationFrame(animate);
+                } else {
+                    barCont.classList.add('hidden');
+                    recipeState.count = 1;
+                    checkStepProgress(1);
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function checkStepProgress(target) {
+            if (recipeState.count >= target) {
+                recipeState.step++;
+                recipeState.count = 0;
+                const steps = getRecipeSteps(currentFood.recipeId);
+                if (recipeState.step < steps.length) {
+                    runRecipeStep();
+                } else {
+                    finishRecipe();
+                }
+            }
+        }
+
+        function finishRecipe() {
+            document.getElementById('recipe-step-box').innerText = "🎉 料理完成！";
+            document.getElementById('recipe-hint').innerText = "這份美味已收錄於藏書閣中。";
+            document.getElementById('interactive-tools').innerHTML = '';
+            document.getElementById('finish-btn').classList.remove('hidden');
+            document.getElementById('finish-btn').onclick = () => {
+                currentFood.collected = true;
+                changeScene('shelf');
+            };
+            drawFinishedDish();
+        }
+
+        // --- 繪圖邏輯 ---
+        function drawKitchenBase() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 畫格線背景
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 1;
+            for(let i=0; i<canvas.width; i+=40) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke(); }
+            for(let i=0; i<canvas.height; i+=40) { ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width,i); ctx.stroke(); }
+            
+            // 畫中央工作檯物件（依不同食物有簡單變形）
+            ctx.save();
+            ctx.translate(450, 325);
+            ctx.lineWidth = 6;
+            ctx.strokeStyle = '#000';
+            ctx.fillStyle = '#fff';
+            
+            // 基礎圓盤
+            ctx.beginPath();
+            ctx.ellipse(0, 50, 200, 100, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // 食物圖標渲染
+            ctx.font = '80px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(currentFood.icon, 0, 20);
+            
+            ctx.restore();
+        }
+
+        function drawFinishedDish() {
+            ctx.save();
+            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+            ctx.fillRect(0,0,900,650);
+            ctx.translate(450, 325);
+            ctx.scale(1.5, 1.5);
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = 'gold';
+            ctx.font = '100px Arial';
+            ctx.fillText(currentFood.icon, 0, 30);
+            ctx.restore();
+        }
+
+        canvas.onmousedown = () => isDrawing = true;
+        canvas.onmouseup = () => isDrawing = false;
+        canvas.onmousemove = (e) => {
+            if(!isDrawing) return;
+            const steps = getRecipeSteps(currentFood.recipeId);
+            const current = steps[recipeState.step];
+            if(current && current.action === 'slice') {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // 簡易路徑切割偵測
+                if(x > 350 && x < 550 && y > 250 && y < 400) {
+                    recipeState.count += 0.1;
+                    if(Math.floor(recipeState.count) > recipeState.lastCount || 0) {
+                        triggerFX('唰！', x, y);
+                        recipeState.lastCount = Math.floor(recipeState.count);
+                    }
+                    checkStepProgress(current.target);
+                }
+            }
+        };
+
+        function triggerFX(text, x, y) {
+            const container = document.getElementById('fx-layer');
+            const el = document.createElement('div');
+            el.className = 'onomatopeia';
+            el.innerText = text;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 800);
+        }
+
+        // --- Modal 管理 ---
+        function openModal(comicId) {
+            const comic = comicData.find(c => c.id === comicId);
+            document.getElementById('modal-title').innerText = comic.title;
+            document.getElementById('modal-author').innerText = `原著作者：${comic.author}`;
+            document.getElementById('modal-desc').innerText = comic.desc;
+            document.getElementById('modal-link').href = comic.link;
+            
+            const cover = document.getElementById('modal-cover');
+            cover.style.backgroundColor = comic.color;
+            cover.innerText = comic.foods[0].icon;
+
+            const foodGrid = document.getElementById('modal-foods');
+            foodGrid.innerHTML = '';
+            comic.foods.forEach(f => {
+                const badge = document.createElement('div');
+                badge.className = `w-12 h-12 flex items-center justify-center border-2 border-black text-2xl ${f.collected ? 'bg-white' : 'bg-gray-200 opacity-20'}`;
+                badge.title = f.name;
+                badge.innerText = f.icon;
+                foodGrid.appendChild(badge);
+            });
+
+            toggleModal(true);
+        }
+
+        function toggleModal(show) {
+            document.getElementById('modal').classList.toggle('hidden', !show);
+        }
+
+        // 初始化
+        window.onload = () => {
+            renderIntro();
+            renderShelf();
+        };
+    </script>
+</body>
+</html>
